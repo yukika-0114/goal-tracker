@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="目標管理">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -109,27 +109,23 @@
       <button type="button" class="type-toggle-btn active" data-type="pace">毎日型</button>
       <button type="button" class="type-toggle-btn" data-type="deadline">期限型</button>
     </div>
-    <div id="typeHint" class="type-hint">1日あたりの増加値を決めて、達成予定日を自動計算します。</div>
+    <div id="typeHint" class="type-hint">1日あたり・1ヶ月あたりの増加値を決めて、達成予定日を自動計算します。</div>
 
     <label>目標名 <input type="text" id="newGoalName" required></label>
     <label>目標値 <input type="number" id="newGoalTarget" step="any" required></label>
     <label>現在の値(任意、未入力は0) <input type="number" id="newGoalInitialValue" step="any" placeholder="0"></label>
 
     <div id="paceFields" class="type-fields">
-      <label class="checkbox-field" id="initialIncludesTodayField">
+      <label class="checkbox-field">
         <input type="checkbox" id="newGoalInitialIncludesToday">
         入力した現在値に本日分の増加値を含める
       </label>
 
-      <div class="period-toggle">
-        <button type="button" class="period-toggle-btn active" data-period="day">毎日</button>
-        <button type="button" class="period-toggle-btn" data-period="month">毎月</button>
-      </div>
-
-      <label id="incrementFieldLabel">1日あたりの増加値 <input type="number" id="newGoalIncrement" step="any"></label>
+      <label>1日あたりの増加値(任意) <input type="number" id="newGoalIncrement" step="any" placeholder="0"></label>
+      <label>1ヶ月あたりの増加値(任意) <input type="number" id="newGoalMonthlyIncrement" step="any" placeholder="0"></label>
       <label class="checkbox-field">
         <input type="checkbox" id="newGoalAutoIncrease" checked>
-        <span id="autoIncreaseText">毎日自動で増加させる(オフの場合は増加値タブから手動で記録します)</span>
+        自動で増加させる(オフの場合は増加値タブから手動で記録します)
       </label>
     </div>
 
@@ -247,6 +243,6 @@
   </div>
 </template>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

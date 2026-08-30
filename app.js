@@ -94,19 +94,16 @@
   function computeAutoSum(goal, uptoDate) {
     if (goal.autoIncreaseEnabled === false) return 0;
 
-    if (goal.incrementPeriod === "month") {
-      return monthsElapsed(isoToDate(goal.startDate), uptoDate) * goal.increment;
-    }
-
     const excludedSet = new Set(goal.excludedDates);
     let cur = isoToDate(goal.startDate);
     if (goal.initialValueIncludesToday) cur = addDays(cur, 1);
     const end = uptoDate;
     let sum = 0;
     while (cur <= end) {
-      if (!excludedSet.has(dateToIso(cur))) sum += goal.increment;
+      if (!excludedSet.has(dateToIso(cur))) sum += goal.increment || 0;
       cur = addDays(cur, 1);
     }
+    sum += monthsElapsed(isoToDate(goal.startDate), uptoDate) * (goal.monthlyIncrement || 0);
     return sum;
   }
 
@@ -133,28 +130,53 @@
     return null;
   }
 
-  function computeMilestoneInfo(goal, current, milestoneValue, today, rate, ratePeriod) {
-    const effRate = rate != null ? rate : goal.increment;
+  // Walks forward day by day from `today`, adding the daily rate (skipping excluded
+  // dates) plus the monthly rate on each month-anniversary of goal.startDate, until
+  // `remaining` is reached. Handles daily-only, monthly-only, and combined goals alike.
+  function computeCombinedEtaDate(goal, remaining, today) {
+    const excludedSet = new Set(goal.excludedDates);
+    const dailyRate = goal.increment || 0;
+    const monthlyRate = goal.monthlyIncrement || 0;
+    const start = isoToDate(goal.startDate);
+    let monthIndex = monthsElapsed(start, today);
+    let nextAnniversary = addMonths(start, monthIndex + 1);
+    let cur = addDays(today, 1);
+    let acc = 0;
+    for (let i = 0; i < 366 * 200; i++) {
+      if (!excludedSet.has(dateToIso(cur))) acc += dailyRate;
+      if (cur.getTime() === nextAnniversary.getTime()) {
+        acc += monthlyRate;
+        monthIndex += 1;
+        nextAnniversary = addMonths(start, monthIndex + 1);
+      }
+      if (acc >= remaining) return cur;
+      cur = addDays(cur, 1);
+    }
+    return null;
+  }
+
+  function computeMilestoneInfo(goal, current, milestoneValue, today, rate) {
     const remaining = milestoneValue - current;
     if (remaining <= 0) {
       return { achieved: true, remaining: 0, etaDate: null, etaUnavailable: false };
     }
-    if (!(effRate > 0)) {
-      return { achieved: false, remaining, etaDate: null, etaUnavailable: true };
-    }
 
-    if (ratePeriod === "month") {
-      const neededMonths = Math.ceil(remaining / effRate);
-      const start = isoToDate(goal.startDate);
-      const passedMonths = monthsElapsed(start, today);
-      const etaDate = addMonths(start, passedMonths + neededMonths);
+    if (goal.goalType === "deadline") {
+      const effRate = rate != null ? rate : goal.increment;
+      if (!(effRate > 0)) {
+        return { achieved: false, remaining, etaDate: null, etaUnavailable: true };
+      }
+      const neededDays = Math.ceil(remaining / effRate);
+      const excludedSet = new Set(goal.excludedDates);
+      const etaDate = computeEtaDate(addDays(today, 1), neededDays, excludedSet);
       return { achieved: false, remaining, etaDate, etaUnavailable: false };
     }
 
-    const neededDays = Math.ceil(remaining / effRate);
-    const excludedSet = new Set(goal.excludedDates);
-    const etaDate = computeEtaDate(addDays(today, 1), neededDays, excludedSet);
-    return { achieved: false, remaining, etaDate, etaUnavailable: false };
+    if (!((goal.increment || 0) > 0) && !((goal.monthlyIncrement || 0) > 0)) {
+      return { achieved: false, remaining, etaDate: null, etaUnavailable: true };
+    }
+    const etaDate = computeCombinedEtaDate(goal, remaining, today);
+    return { achieved: false, remaining, etaDate, etaUnavailable: !etaDate };
   }
 
   function computeRequiredDailyPaceFor(goal, current, milestoneValue, deadlineDateIso, today) {
@@ -179,11 +201,6 @@
   function effectiveRate(goal, current, today) {
     if (goal.goalType === "deadline") return computeRequiredDailyPace(goal, current, today);
     return goal.increment;
-  }
-
-  function effectiveRatePeriod(goal) {
-    if (goal.goalType === "deadline") return "day";
-    return goal.incrementPeriod === "month" ? "month" : "day";
   }
 
   function findNearestSubgoal(goal, current) {
@@ -247,7 +264,7 @@
     etaLabelEl.textContent = "達成予定日";
     etaRelLabelEl.textContent = "あと";
     const rate = effectiveRate(goal, current, today);
-    const info = computeMilestoneInfo(goal, current, goal.target, today, rate, effectiveRatePeriod(goal));
+    const info = computeMilestoneInfo(goal, current, goal.target, today, rate);
     remainingEl.textContent = info.achieved ? "0" : formatNumber(info.remaining);
     fillEtaCell(info, etaEl, etaRelEl);
     return info.achieved;
@@ -274,7 +291,7 @@
     etaLabelEl.textContent = "達成予定日";
     etaRelLabelEl.textContent = "あと";
     const rate = effectiveRate(goal, current, today);
-    const info = computeMilestoneInfo(goal, current, sub.value, today, rate, effectiveRatePeriod(goal));
+    const info = computeMilestoneInfo(goal, current, sub.value, today, rate);
     remainingEl.textContent = info.achieved ? "0" : formatNumber(info.remaining);
     fillEtaCell(info, etaEl, etaRelEl);
     return info.achieved;
@@ -438,7 +455,6 @@
   document.getElementById("openAddScreen").addEventListener("click", () => {
     document.getElementById("addGoalForm").reset();
     setAddGoalType("pace");
-    setIncrementPeriod("day");
     document.getElementById("newGoalAutoIncrease").checked = true;
     showScreen("add");
   });
@@ -614,9 +630,8 @@
   function computeMilestoneImpactForStep(goal, step, milestoneValue) {
     const baselineRate = effectiveRate(goal, step.beforeValue, step.anchor);
     const withPlanRate = effectiveRate(goal, step.afterValue, step.anchor);
-    const ratePeriod = effectiveRatePeriod(goal);
-    const baseline = computeMilestoneInfo(goal, step.beforeValue, milestoneValue, step.anchor, baselineRate, ratePeriod);
-    const withPlan = computeMilestoneInfo(goal, step.afterValue, milestoneValue, step.anchor, withPlanRate, ratePeriod);
+    const baseline = computeMilestoneInfo(goal, step.beforeValue, milestoneValue, step.anchor, baselineRate);
+    const withPlan = computeMilestoneInfo(goal, step.afterValue, milestoneValue, step.anchor, withPlanRate);
     const neededAfter = Math.max(0, milestoneValue - step.afterValue);
 
     let deltaDays = null;
@@ -876,26 +891,13 @@
   const deadlineFieldsEl = document.getElementById("deadlineFields");
   const typeHintEl = document.getElementById("typeHint");
   const newGoalIncrementInput = document.getElementById("newGoalIncrement");
+  const newGoalMonthlyIncrementInput = document.getElementById("newGoalMonthlyIncrement");
   const newGoalDeadlineInput = document.getElementById("newGoalDeadline");
-  const incrementFieldLabelEl = document.getElementById("incrementFieldLabel");
-  const autoIncreaseTextEl = document.getElementById("autoIncreaseText");
-  const initialIncludesTodayFieldEl = document.getElementById("initialIncludesTodayField");
   let currentAddGoalType = "pace";
-  let currentIncrementPeriod = "day";
 
   const TYPE_HINTS = {
-    pace: "1日あたりの増加値を決めて、達成予定日を自動計算します。",
+    pace: "1日あたり・1ヶ月あたりの増加値を決めて、達成予定日を自動計算します。",
     deadline: "達成期限日を決めて、1日あたりに必要な値を自動計算します。",
-  };
-
-  const INCREMENT_LABELS = {
-    day: "1日あたりの増加値",
-    month: "1ヶ月あたりの増加値",
-  };
-
-  const AUTO_INCREASE_LABELS = {
-    day: "毎日自動で増加させる(オフの場合は増加値タブから手動で記録します)",
-    month: "毎月自動で増加させる(オフの場合は増加値タブから手動で記録します)",
   };
 
   function setAddGoalType(type) {
@@ -906,29 +908,12 @@
     const isPace = type === "pace";
     paceFieldsEl.hidden = !isPace;
     deadlineFieldsEl.hidden = isPace;
-    newGoalIncrementInput.required = isPace;
     newGoalDeadlineInput.required = !isPace;
     typeHintEl.textContent = TYPE_HINTS[type];
   }
 
   document.querySelectorAll(".type-toggle-btn").forEach((btn) => {
     btn.addEventListener("click", () => setAddGoalType(btn.dataset.type));
-  });
-
-  function setIncrementPeriod(period) {
-    currentIncrementPeriod = period;
-    document.querySelectorAll(".period-toggle-btn").forEach((b) => {
-      b.classList.toggle("active", b.dataset.period === period);
-    });
-    incrementFieldLabelEl.firstChild.textContent = INCREMENT_LABELS[period] + " ";
-    autoIncreaseTextEl.textContent = AUTO_INCREASE_LABELS[period];
-    const isMonth = period === "month";
-    initialIncludesTodayFieldEl.hidden = isMonth;
-    if (isMonth) document.getElementById("newGoalInitialIncludesToday").checked = false;
-  }
-
-  document.querySelectorAll(".period-toggle-btn").forEach((btn) => {
-    btn.addEventListener("click", () => setIncrementPeriod(btn.dataset.period));
   });
 
   document.getElementById("backFromAdd").addEventListener("click", () => {
@@ -960,18 +945,25 @@
     };
 
     if (currentAddGoalType === "pace") {
-      const increment = Number(newGoalIncrementInput.value);
+      const incrementRaw = newGoalIncrementInput.value;
+      const monthlyIncrementRaw = newGoalMonthlyIncrementInput.value;
+      const increment = incrementRaw === "" ? 0 : Number(incrementRaw);
+      const monthlyIncrement = monthlyIncrementRaw === "" ? 0 : Number(monthlyIncrementRaw);
       const initialValueIncludesToday = document.getElementById("newGoalInitialIncludesToday").checked;
       const autoIncreaseEnabled = document.getElementById("newGoalAutoIncrease").checked;
-      if (Number.isNaN(increment) || increment <= 0) {
-        alert(`${INCREMENT_LABELS[currentIncrementPeriod]}を正しく入力してください(0より大きい数)。`);
+      if (Number.isNaN(increment) || increment < 0 || Number.isNaN(monthlyIncrement) || monthlyIncrement < 0) {
+        alert("増加値を正しく入力してください(0以上の数)。");
+        return;
+      }
+      if (increment <= 0 && monthlyIncrement <= 0) {
+        alert("1日あたり・1ヶ月あたりのいずれかの増加値を0より大きい数で入力してください。");
         return;
       }
       goals.push({
         ...baseGoal,
         goalType: "pace",
         increment,
-        incrementPeriod: currentIncrementPeriod,
+        monthlyIncrement,
         initialValueIncludesToday,
         autoIncreaseEnabled,
       });
@@ -985,6 +977,7 @@
         ...baseGoal,
         goalType: "deadline",
         increment: 0,
+        monthlyIncrement: 0,
         initialValueIncludesToday: false,
         autoIncreaseEnabled: false,
         deadlineDate: deadlineRaw,
