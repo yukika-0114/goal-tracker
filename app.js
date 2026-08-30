@@ -32,6 +32,15 @@
     return new Date(date.getFullYear(), date.getMonth() + n, date.getDate());
   }
 
+  // Number of full month-anniversaries of `fromDate` that have passed by `toDate`.
+  function monthsElapsed(fromDate, toDate) {
+    if (toDate < fromDate) return 0;
+    let months = (toDate.getFullYear() - fromDate.getFullYear()) * 12 + (toDate.getMonth() - fromDate.getMonth());
+    const anniversary = addMonths(fromDate, months);
+    if (anniversary > toDate) months -= 1;
+    return Math.max(0, months);
+  }
+
   function formatAbsoluteDate(date) {
     return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
   }
@@ -84,6 +93,11 @@
 
   function computeAutoSum(goal, uptoDate) {
     if (goal.autoIncreaseEnabled === false) return 0;
+
+    if (goal.incrementPeriod === "month") {
+      return monthsElapsed(isoToDate(goal.startDate), uptoDate) * goal.increment;
+    }
+
     const excludedSet = new Set(goal.excludedDates);
     let cur = isoToDate(goal.startDate);
     if (goal.initialValueIncludesToday) cur = addDays(cur, 1);
@@ -119,7 +133,7 @@
     return null;
   }
 
-  function computeMilestoneInfo(goal, current, milestoneValue, today, rate) {
+  function computeMilestoneInfo(goal, current, milestoneValue, today, rate, ratePeriod) {
     const effRate = rate != null ? rate : goal.increment;
     const remaining = milestoneValue - current;
     if (remaining <= 0) {
@@ -128,6 +142,15 @@
     if (!(effRate > 0)) {
       return { achieved: false, remaining, etaDate: null, etaUnavailable: true };
     }
+
+    if (ratePeriod === "month") {
+      const neededMonths = Math.ceil(remaining / effRate);
+      const start = isoToDate(goal.startDate);
+      const passedMonths = monthsElapsed(start, today);
+      const etaDate = addMonths(start, passedMonths + neededMonths);
+      return { achieved: false, remaining, etaDate, etaUnavailable: false };
+    }
+
     const neededDays = Math.ceil(remaining / effRate);
     const excludedSet = new Set(goal.excludedDates);
     const etaDate = computeEtaDate(addDays(today, 1), neededDays, excludedSet);
@@ -156,6 +179,11 @@
   function effectiveRate(goal, current, today) {
     if (goal.goalType === "deadline") return computeRequiredDailyPace(goal, current, today);
     return goal.increment;
+  }
+
+  function effectiveRatePeriod(goal) {
+    if (goal.goalType === "deadline") return "day";
+    return goal.incrementPeriod === "month" ? "month" : "day";
   }
 
   function findNearestSubgoal(goal, current) {
@@ -219,7 +247,7 @@
     etaLabelEl.textContent = "達成予定日";
     etaRelLabelEl.textContent = "あと";
     const rate = effectiveRate(goal, current, today);
-    const info = computeMilestoneInfo(goal, current, goal.target, today, rate);
+    const info = computeMilestoneInfo(goal, current, goal.target, today, rate, effectiveRatePeriod(goal));
     remainingEl.textContent = info.achieved ? "0" : formatNumber(info.remaining);
     fillEtaCell(info, etaEl, etaRelEl);
     return info.achieved;
@@ -246,7 +274,7 @@
     etaLabelEl.textContent = "達成予定日";
     etaRelLabelEl.textContent = "あと";
     const rate = effectiveRate(goal, current, today);
-    const info = computeMilestoneInfo(goal, current, sub.value, today, rate);
+    const info = computeMilestoneInfo(goal, current, sub.value, today, rate, effectiveRatePeriod(goal));
     remainingEl.textContent = info.achieved ? "0" : formatNumber(info.remaining);
     fillEtaCell(info, etaEl, etaRelEl);
     return info.achieved;
@@ -410,6 +438,7 @@
   document.getElementById("openAddScreen").addEventListener("click", () => {
     document.getElementById("addGoalForm").reset();
     setAddGoalType("pace");
+    setIncrementPeriod("day");
     document.getElementById("newGoalAutoIncrease").checked = true;
     showScreen("add");
   });
@@ -585,8 +614,9 @@
   function computeMilestoneImpactForStep(goal, step, milestoneValue) {
     const baselineRate = effectiveRate(goal, step.beforeValue, step.anchor);
     const withPlanRate = effectiveRate(goal, step.afterValue, step.anchor);
-    const baseline = computeMilestoneInfo(goal, step.beforeValue, milestoneValue, step.anchor, baselineRate);
-    const withPlan = computeMilestoneInfo(goal, step.afterValue, milestoneValue, step.anchor, withPlanRate);
+    const ratePeriod = effectiveRatePeriod(goal);
+    const baseline = computeMilestoneInfo(goal, step.beforeValue, milestoneValue, step.anchor, baselineRate, ratePeriod);
+    const withPlan = computeMilestoneInfo(goal, step.afterValue, milestoneValue, step.anchor, withPlanRate, ratePeriod);
     const neededAfter = Math.max(0, milestoneValue - step.afterValue);
 
     let deltaDays = null;
@@ -847,11 +877,25 @@
   const typeHintEl = document.getElementById("typeHint");
   const newGoalIncrementInput = document.getElementById("newGoalIncrement");
   const newGoalDeadlineInput = document.getElementById("newGoalDeadline");
+  const incrementFieldLabelEl = document.getElementById("incrementFieldLabel");
+  const autoIncreaseTextEl = document.getElementById("autoIncreaseText");
+  const initialIncludesTodayFieldEl = document.getElementById("initialIncludesTodayField");
   let currentAddGoalType = "pace";
+  let currentIncrementPeriod = "day";
 
   const TYPE_HINTS = {
     pace: "1日あたりの増加値を決めて、達成予定日を自動計算します。",
     deadline: "達成期限日を決めて、1日あたりに必要な値を自動計算します。",
+  };
+
+  const INCREMENT_LABELS = {
+    day: "1日あたりの増加値",
+    month: "1ヶ月あたりの増加値",
+  };
+
+  const AUTO_INCREASE_LABELS = {
+    day: "毎日自動で増加させる(オフの場合は増加値タブから手動で記録します)",
+    month: "毎月自動で増加させる(オフの場合は増加値タブから手動で記録します)",
   };
 
   function setAddGoalType(type) {
@@ -869,6 +913,22 @@
 
   document.querySelectorAll(".type-toggle-btn").forEach((btn) => {
     btn.addEventListener("click", () => setAddGoalType(btn.dataset.type));
+  });
+
+  function setIncrementPeriod(period) {
+    currentIncrementPeriod = period;
+    document.querySelectorAll(".period-toggle-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.period === period);
+    });
+    incrementFieldLabelEl.firstChild.textContent = INCREMENT_LABELS[period] + " ";
+    autoIncreaseTextEl.textContent = AUTO_INCREASE_LABELS[period];
+    const isMonth = period === "month";
+    initialIncludesTodayFieldEl.hidden = isMonth;
+    if (isMonth) document.getElementById("newGoalInitialIncludesToday").checked = false;
+  }
+
+  document.querySelectorAll(".period-toggle-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setIncrementPeriod(btn.dataset.period));
   });
 
   document.getElementById("backFromAdd").addEventListener("click", () => {
@@ -904,13 +964,14 @@
       const initialValueIncludesToday = document.getElementById("newGoalInitialIncludesToday").checked;
       const autoIncreaseEnabled = document.getElementById("newGoalAutoIncrease").checked;
       if (Number.isNaN(increment) || increment <= 0) {
-        alert("1日あたりの増加値を正しく入力してください(0より大きい数)。");
+        alert(`${INCREMENT_LABELS[currentIncrementPeriod]}を正しく入力してください(0より大きい数)。`);
         return;
       }
       goals.push({
         ...baseGoal,
         goalType: "pace",
         increment,
+        incrementPeriod: currentIncrementPeriod,
         initialValueIncludesToday,
         autoIncreaseEnabled,
       });

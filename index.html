@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="目標管理">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
 
@@ -116,14 +116,20 @@
     <label>現在の値(任意、未入力は0) <input type="number" id="newGoalInitialValue" step="any" placeholder="0"></label>
 
     <div id="paceFields" class="type-fields">
-      <label class="checkbox-field">
+      <label class="checkbox-field" id="initialIncludesTodayField">
         <input type="checkbox" id="newGoalInitialIncludesToday">
         入力した現在値に本日分の増加値を含める
       </label>
-      <label>1日あたりの増加値 <input type="number" id="newGoalIncrement" step="any"></label>
+
+      <div class="period-toggle">
+        <button type="button" class="period-toggle-btn active" data-period="day">毎日</button>
+        <button type="button" class="period-toggle-btn" data-period="month">毎月</button>
+      </div>
+
+      <label id="incrementFieldLabel">1日あたりの増加値 <input type="number" id="newGoalIncrement" step="any"></label>
       <label class="checkbox-field">
         <input type="checkbox" id="newGoalAutoIncrease" checked>
-        毎日自動で増加させる(オフの場合は増加値タブから手動で記録します)
+        <span id="autoIncreaseText">毎日自動で増加させる(オフの場合は増加値タブから手動で記録します)</span>
       </label>
     </div>
 
@@ -241,6 +247,6 @@
   </div>
 </template>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
