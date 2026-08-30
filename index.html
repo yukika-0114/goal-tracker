@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>目標管理</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== 画面1: 目標一覧 ===== -->
+<div id="screenList" class="screen">
+  <header class="app-header">
+    <div class="app-title">目標管理</div>
+    <button id="openAddScreen" class="fab-btn" aria-label="新しい目標">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+  </header>
+  <main id="goalList" class="goal-cards"></main>
+</div>
+
+<!-- ===== 画面2: 目標詳細 ===== -->
+<div id="screenDetail" class="screen" hidden>
+  <header class="page-header">
+    <button id="backFromDetail" class="icon-btn" aria-label="戻る">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>
+    </button>
+    <div id="detailGoalName" class="page-header-title"></div>
+    <button id="deleteGoalBtn" class="icon-btn icon-btn-danger" aria-label="削除">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+    </button>
+  </header>
+
+  <div class="detail-progress-card">
+    <div id="detailStatus" class="status-chip"></div>
+    <div class="detail-progress-numbers">
+      <span id="detailCurrent"></span><span class="muted"> / <span id="detailTarget"></span></span>
+    </div>
+    <div class="progress-bar"><div id="detailProgressFill" class="progress-bar-fill"></div></div>
+    <div id="detailStats" class="stat-tiles">
+      <div class="stat-tile"><div class="stat-tile-label">残り必要値</div><div id="detailRemaining" class="stat-tile-value"></div></div>
+      <div class="stat-tile"><div id="detailEtaLabel" class="stat-tile-label">達成予定日</div><div id="detailEta" class="stat-tile-value"></div></div>
+      <div class="stat-tile"><div id="detailEtaRelativeLabel" class="stat-tile-label">あと</div><div id="detailEtaRelative" class="stat-tile-value"></div></div>
+    </div>
+  </div>
+
+  <div class="tab-row">
+    <button type="button" class="tab-btn" data-tab="manual">増加値</button>
+    <button type="button" class="tab-btn" data-tab="planned">増加予定</button>
+    <button type="button" class="tab-btn" data-tab="excluded">除外日</button>
+    <button type="button" class="tab-btn" data-tab="subgoals">サブ目標</button>
+  </div>
+
+  <section class="tab-panel" data-panel="manual">
+    <form id="manualLogForm" class="inline-form">
+      <label>日付 <input type="date" id="manualLogDate" required></label>
+      <label>増加値 <input type="number" id="manualLogValue" step="any" required></label>
+      <button type="submit" class="btn btn-primary">追加</button>
+    </form>
+    <div class="section-label">履歴</div>
+    <ul id="manualLogList" class="flat-list"></ul>
+  </section>
+
+  <section class="tab-panel" data-panel="planned" hidden>
+    <form id="plannedForm" class="inline-form">
+      <label>〇月〇日に <input type="date" id="plannedDate" required></label>
+      <label>〇〇増加する <input type="number" id="plannedValue" step="any" required></label>
+      <button type="submit" class="btn btn-primary">予定を追加</button>
+    </form>
+    <div class="section-label">登録済みの予定</div>
+    <ul id="plannedList" class="flat-list"></ul>
+  </section>
+
+  <section class="tab-panel" data-panel="excluded" hidden>
+    <form id="excludedDateForm" class="inline-form">
+      <label>日付 <input type="date" id="excludedDateInput" required></label>
+      <button type="submit" class="btn btn-primary">除外日に追加</button>
+    </form>
+    <div class="section-label">履歴</div>
+    <ul id="excludedDateList" class="flat-list"></ul>
+  </section>
+
+  <section class="tab-panel" data-panel="subgoals" hidden>
+    <button type="button" id="openAddSubgoalScreen" class="btn btn-primary">＋ サブ目標を追加</button>
+    <ul id="subgoalList" class="flat-list subgoal-list-spacing"></ul>
+  </section>
+</div>
+
+<!-- ===== 画面3: 目標追加 ===== -->
+<div id="screenAdd" class="screen" hidden>
+  <header class="page-header">
+    <button id="backFromAdd" class="icon-btn" aria-label="戻る">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>
+    </button>
+    <div class="page-header-title">新しい目標</div>
+    <div class="icon-btn-spacer"></div>
+  </header>
+
+  <form id="addGoalForm" class="page-form">
+    <div class="type-toggle">
+      <button type="button" class="type-toggle-btn active" data-type="pace">毎日型</button>
+      <button type="button" class="type-toggle-btn" data-type="deadline">期限型</button>
+    </div>
+    <div id="typeHint" class="type-hint">1日あたりの増加値を決めて、達成予定日を自動計算します。</div>
+
+    <label>目標名 <input type="text" id="newGoalName" required></label>
+    <label>目標値 <input type="number" id="newGoalTarget" step="any" required></label>
+    <label>現在の値(任意、未入力は0) <input type="number" id="newGoalInitialValue" step="any" placeholder="0"></label>
+
+    <div id="paceFields" class="type-fields">
+      <label class="checkbox-field">
+        <input type="checkbox" id="newGoalInitialIncludesToday">
+        入力した現在値に本日分の増加値を含める
+      </label>
+      <label>1日あたりの増加値 <input type="number" id="newGoalIncrement" step="any"></label>
+      <label class="checkbox-field">
+        <input type="checkbox" id="newGoalAutoIncrease" checked>
+        毎日自動で増加させる(オフの場合は増加値タブから手動で記録します)
+      </label>
+    </div>
+
+    <div id="deadlineFields" class="type-fields" hidden>
+      <label>達成期限日 <input type="date" id="newGoalDeadline"></label>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-block">作成</button>
+  </form>
+</div>
+
+<!-- ===== 画面4: サブ目標追加 ===== -->
+<div id="screenAddSubgoal" class="screen" hidden>
+  <header class="page-header">
+    <button id="backFromAddSubgoal" class="icon-btn" aria-label="戻る">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>
+    </button>
+    <div class="page-header-title">サブ目標を追加</div>
+    <div class="icon-btn-spacer"></div>
+  </header>
+
+  <form id="addSubgoalForm" class="page-form">
+    <label>ラベル(任意) <input type="text" id="newSubgoalLabel" placeholder="例: 折り返し地点"></label>
+    <label>値 <input type="number" id="newSubgoalValue" step="any" required></label>
+    <label id="newSubgoalDeadlineField" hidden>達成期限日 <input type="date" id="newSubgoalDeadline"></label>
+    <button type="submit" class="btn btn-primary btn-block">作成</button>
+  </form>
+</div>
+
+<!-- ===== テンプレート ===== -->
+<template id="goalCardTemplate">
+  <article class="goal-card">
+    <div class="goal-card-top">
+      <div class="goal-card-name"></div>
+      <div class="status-chip"></div>
+    </div>
+    <div class="goal-card-progress-row">
+      <div class="goal-card-percent"></div>
+      <div class="goal-card-numbers"></div>
+    </div>
+    <div class="progress-bar"><div class="progress-bar-fill"></div></div>
+    <div class="goal-card-tiles stat-tiles">
+      <div class="stat-tile"><div class="stat-tile-label">残り必要値</div><div class="stat-tile-value goal-card-remaining"></div></div>
+      <div class="stat-tile"><div class="stat-tile-label goal-card-eta-label">達成予定日</div><div class="stat-tile-value goal-card-eta"></div></div>
+      <div class="stat-tile"><div class="stat-tile-label goal-card-eta-relative-label">あと</div><div class="stat-tile-value goal-card-eta-relative"></div></div>
+    </div>
+    <div class="goal-card-subgoal" hidden>
+      <div class="goal-card-subgoal-top">
+        <span><span class="muted">次のサブ目標</span> ・ <span class="goal-card-subgoal-label"></span></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg>
+      </div>
+      <div class="progress-bar subgoal-bar"><div class="progress-bar-fill goal-card-subgoal-fill"></div></div>
+      <div class="stat-tiles subgoal-tiles">
+        <div class="stat-tile"><div class="stat-tile-label">残り必要値</div><div class="stat-tile-value goal-card-subgoal-remaining"></div></div>
+        <div class="stat-tile"><div class="stat-tile-label goal-card-subgoal-eta-label">達成予定日</div><div class="stat-tile-value goal-card-subgoal-eta"></div></div>
+        <div class="stat-tile"><div class="stat-tile-label goal-card-subgoal-eta-relative-label">あと</div><div class="stat-tile-value goal-card-subgoal-eta-relative"></div></div>
+      </div>
+    </div>
+  </article>
+</template>
+
+<template id="flatRowTemplate">
+  <li class="flat-row">
+    <span class="flat-row-label"></span>
+    <span class="flat-row-value"></span>
+    <button type="button" class="flat-row-delete">削除</button>
+  </li>
+</template>
+
+<template id="subgoalRowTemplate">
+  <li class="subgoal-row">
+    <div class="subgoal-row-top">
+      <span class="subgoal-row-label"></span>
+      <span class="status-chip subgoal-row-status"></span>
+    </div>
+    <div class="progress-bar subgoal-bar"><div class="progress-bar-fill subgoal-row-fill"></div></div>
+    <div class="stat-tiles subgoal-row-tiles">
+      <div class="stat-tile"><div class="stat-tile-label">残り必要値</div><div class="stat-tile-value subgoal-row-remaining"></div></div>
+      <div class="stat-tile"><div class="stat-tile-label subgoal-row-eta-label">達成予定日</div><div class="stat-tile-value subgoal-row-eta"></div></div>
+      <div class="stat-tile"><div class="stat-tile-label subgoal-row-eta-relative-label">あと</div><div class="stat-tile-value subgoal-row-eta-relative"></div></div>
+    </div>
+    <button type="button" class="flat-row-delete subgoal-row-delete">削除</button>
+  </li>
+</template>
+
+<template id="plannedCardTemplate">
+  <li class="planned-card">
+    <div class="planned-card-head">
+      <span class="planned-card-date"></span>
+      <span class="planned-card-value"></span>
+      <button type="button" class="flat-row-delete planned-delete">削除</button>
+    </div>
+    <div class="planned-subgoal-list"></div>
+    <div class="planned-main"></div>
+  </li>
+</template>
+
+<template id="plannedImpactTemplate">
+  <div class="planned-impact">
+    <div class="planned-impact-label"></div>
+    <div class="planned-impact-achieved-note" hidden>すでに達成済みです</div>
+    <div class="planned-impact-body">
+      <div class="stat-tiles planned-stats-row-2">
+        <div class="stat-tile"><div class="stat-tile-label">設定日の現在値</div><div class="stat-tile-value planned-before"></div></div>
+        <div class="stat-tile"><div class="stat-tile-label">増加後の値</div><div class="stat-tile-value planned-after"></div></div>
+      </div>
+      <div class="stat-tiles planned-stats-row-2">
+        <div class="stat-tile"><div class="stat-tile-label">目標達成に必要な値</div><div class="stat-tile-value planned-needed"></div></div>
+        <div class="stat-tile"><div class="stat-tile-label">短縮日数</div><div class="stat-tile-value planned-delta"></div></div>
+      </div>
+      <div class="stat-tiles planned-stats-row-2">
+        <div class="stat-tile"><div class="stat-tile-label">達成予定日</div><div class="stat-tile-value planned-eta"></div></div>
+        <div class="stat-tile"><div class="stat-tile-label">達成まで</div><div class="stat-tile-value planned-eta-relative"></div></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>
