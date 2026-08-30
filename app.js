@@ -473,7 +473,7 @@
 
     applyDetailTab();
     renderManualLogPanel(goal, today);
-    if (!isDeadlineType) renderPlannedPanel(goal, current, today);
+    if (!isDeadlineType) renderPlannedPanel(goal, today);
     renderExcludedDatePanel(goal);
     renderSubgoalPanel(goal, current, today);
   }
@@ -608,17 +608,16 @@
     };
   }
 
+  function plannedImpactSortKey(impact, anchor) {
+    if (impact.withPlan.achieved) return anchor;
+    if (impact.withPlan.etaUnavailable || !impact.withPlan.etaDate) return null;
+    return impact.withPlan.etaDate;
+  }
+
   function renderPlannedImpactBlock(container, label, dotColor, impact) {
     const node = plannedImpactTemplate.content.firstElementChild.cloneNode(true);
     node.querySelector(".planned-impact-label").textContent = label;
     if (dotColor) node.style.setProperty("--dot-color", dotColor);
-
-    if (impact.baseline.achieved) {
-      node.querySelector(".planned-impact-achieved-note").hidden = false;
-      node.querySelector(".planned-impact-body").hidden = true;
-      container.appendChild(node);
-      return;
-    }
 
     node.querySelector(".planned-before").textContent = formatNumber(impact.beforeValue);
     node.querySelector(".planned-after").textContent = formatNumber(impact.afterValue);
@@ -651,11 +650,10 @@
     container.appendChild(node);
   }
 
-  function renderPlannedPanel(goal, current, today) {
+  function renderPlannedPanel(goal, today) {
     plannedListEl.innerHTML = "";
     const entries = [...(goal.plannedIncreases || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
     const chain = computePlannedChain(goal, entries);
-    const pendingSubgoals = [...goal.subGoals].filter((s) => s.value > current).sort((a, b) => a.value - b.value);
 
     for (const step of chain) {
       const li = plannedCardTemplate.content.firstElementChild.cloneNode(true);
@@ -666,14 +664,31 @@
         handleDetailDataChange();
       });
 
+      // Only not-yet-achieved sub-goals, nearest-to-achievement first, capped at 2.
       const subgoalListContainer = li.querySelector(".planned-subgoal-list");
-      for (const sub of pendingSubgoals) {
-        const impact = computeMilestoneImpactForStep(goal, step, sub.value);
+      const subgoalImpacts = goal.subGoals
+        .map((sub) => ({ sub, impact: computeMilestoneImpactForStep(goal, step, sub.value) }))
+        .filter(({ impact }) => !impact.baseline.achieved)
+        .sort((a, b) => {
+          const da = plannedImpactSortKey(a.impact, step.anchor);
+          const db = plannedImpactSortKey(b.impact, step.anchor);
+          if (da === null && db === null) return 0;
+          if (da === null) return 1;
+          if (db === null) return -1;
+          return da - db;
+        })
+        .slice(0, 2);
+      for (const { sub, impact } of subgoalImpacts) {
         renderPlannedImpactBlock(subgoalListContainer, formatSubgoalLabel(sub), subgoalColor(goal, sub.id), impact);
       }
 
       const mainImpact = computeMilestoneImpactForStep(goal, step, goal.target);
-      renderPlannedImpactBlock(li.querySelector(".planned-main"), "メイン目標", null, mainImpact);
+      const mainEl = li.querySelector(".planned-main");
+      if (mainImpact.baseline.achieved) {
+        mainEl.hidden = true;
+      } else {
+        renderPlannedImpactBlock(mainEl, "メイン目標", null, mainImpact);
+      }
 
       plannedListEl.appendChild(li);
     }

@@ -423,7 +423,6 @@ body {
 
 .planned-impact-body { display: flex; flex-direction: column; }
 .planned-stats-row-2 { grid-template-columns: repeat(2, 1fr); margin-top: 0.5rem; }
-.planned-impact-achieved-note { font-size: 0.82rem; color: var(--text-muted); }
 
 .planned-subgoal-list .planned-impact {
   background: var(--surface);
