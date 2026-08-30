@@ -368,21 +368,22 @@ body {
 }
 .inline-form label,
 .page-form label {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.4rem;
+  display: block;
   font-size: 0.78rem;
   color: var(--text-muted);
   text-align: left;
   width: 100%;
   max-width: 320px;
+  margin: 0;
 }
 .inline-form input,
 .page-form input {
+  display: block;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  margin-top: 0.4rem;
   border: 1px solid #ddd9d0;
   border-radius: 10px;
   padding: 0.7rem 0.75rem;
@@ -479,10 +480,11 @@ body {
 }
 .page-form .btn-block { max-width: 320px; }
 .checkbox-field {
+  display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
   gap: 0.6rem !important;
   font-size: 0.85rem !important;
   color: var(--text) !important;
 }
-.checkbox-field input { width: 17px; height: 17px; flex-shrink: 0; }
+.checkbox-field input { width: 17px; height: 17px; flex-shrink: 0; margin-top: 0; }
