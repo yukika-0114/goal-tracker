@@ -91,6 +91,13 @@
 
   // ---------- calculation core ----------
 
+  // The monthly increment recurs on the month-anniversary of this date, so picking a
+  // custom date controls which day of the month it lands on; falls back to the goal's
+  // start date when unset.
+  function monthlyAnchorDate(goal) {
+    return isoToDate(goal.monthlyIncrementDate || goal.startDate);
+  }
+
   function computeAutoSum(goal, uptoDate) {
     if (goal.autoIncreaseEnabled === false) return 0;
 
@@ -103,7 +110,7 @@
       if (!excludedSet.has(dateToIso(cur))) sum += goal.increment || 0;
       cur = addDays(cur, 1);
     }
-    sum += monthsElapsed(isoToDate(goal.startDate), uptoDate) * (goal.monthlyIncrement || 0);
+    sum += monthsElapsed(monthlyAnchorDate(goal), uptoDate) * (goal.monthlyIncrement || 0);
     return sum;
   }
 
@@ -131,15 +138,15 @@
   }
 
   // Walks forward day by day from `today`, adding the daily rate (skipping excluded
-  // dates) plus the monthly rate on each month-anniversary of goal.startDate, until
-  // `remaining` is reached. Handles daily-only, monthly-only, and combined goals alike.
+  // dates) plus the monthly rate on each month-anniversary of the monthly anchor date,
+  // until `remaining` is reached. Handles daily-only, monthly-only, and combined goals alike.
   function computeCombinedEtaDate(goal, remaining, today) {
     const excludedSet = new Set(goal.excludedDates);
     const dailyRate = goal.increment || 0;
     const monthlyRate = goal.monthlyIncrement || 0;
-    const start = isoToDate(goal.startDate);
-    let monthIndex = monthsElapsed(start, today);
-    let nextAnniversary = addMonths(start, monthIndex + 1);
+    const anchor = monthlyAnchorDate(goal);
+    let monthIndex = monthsElapsed(anchor, today);
+    let nextAnniversary = addMonths(anchor, monthIndex + 1);
     let cur = addDays(today, 1);
     let acc = 0;
     for (let i = 0; i < 366 * 200; i++) {
@@ -147,7 +154,7 @@
       if (cur.getTime() === nextAnniversary.getTime()) {
         acc += monthlyRate;
         monthIndex += 1;
-        nextAnniversary = addMonths(start, monthIndex + 1);
+        nextAnniversary = addMonths(anchor, monthIndex + 1);
       }
       if (acc >= remaining) return cur;
       cur = addDays(cur, 1);
@@ -304,6 +311,7 @@
     detail: document.getElementById("screenDetail"),
     add: document.getElementById("screenAdd"),
     addSubgoal: document.getElementById("screenAddSubgoal"),
+    settings: document.getElementById("screenSettings"),
   };
 
   function showScreen(name) {
@@ -357,6 +365,7 @@
   attachSwipeBack(screens.detail);
   attachSwipeBack(screens.add);
   attachSwipeBack(screens.addSubgoal);
+  attachSwipeBack(screens.settings);
 
   // ---------- list screen ----------
 
@@ -515,6 +524,7 @@
     if (isDeadlineType && currentDetailTab === "planned") {
       currentDetailTab = "manual";
     }
+    document.getElementById("openSettingsScreen").hidden = isDeadlineType;
 
     applyDetailTab();
     renderManualLogPanel(goal, today);
@@ -558,6 +568,60 @@
     persist();
     renderDetailScreen();
   }
+
+  // ---------- settings screen ----------
+
+  const settingsForm = document.getElementById("settingsForm");
+  const settingsIncrementInput = document.getElementById("settingsIncrement");
+  const settingsMonthlyIncrementInput = document.getElementById("settingsMonthlyIncrement");
+  const settingsMonthlyIncrementDateInput = document.getElementById("settingsMonthlyIncrementDate");
+  const settingsInitialIncludesTodayInput = document.getElementById("settingsInitialIncludesToday");
+  const settingsAutoIncreaseInput = document.getElementById("settingsAutoIncrease");
+
+  document.getElementById("openSettingsScreen").addEventListener("click", () => {
+    const goal = getCurrentDetailGoal();
+    if (!goal) return;
+    settingsIncrementInput.value = goal.increment || "";
+    settingsMonthlyIncrementInput.value = goal.monthlyIncrement || "";
+    settingsMonthlyIncrementDateInput.value = goal.monthlyIncrementDate || "";
+    settingsInitialIncludesTodayInput.checked = !!goal.initialValueIncludesToday;
+    settingsAutoIncreaseInput.checked = goal.autoIncreaseEnabled !== false;
+    showScreen("settings");
+  });
+
+  document.getElementById("backFromSettings").addEventListener("click", () => {
+    showScreen("detail");
+  });
+
+  settingsForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const goal = getCurrentDetailGoal();
+    if (!goal) return;
+
+    const incrementRaw = settingsIncrementInput.value;
+    const monthlyIncrementRaw = settingsMonthlyIncrementInput.value;
+    const increment = incrementRaw === "" ? 0 : Number(incrementRaw);
+    const monthlyIncrement = monthlyIncrementRaw === "" ? 0 : Number(monthlyIncrementRaw);
+
+    if (Number.isNaN(increment) || increment < 0 || Number.isNaN(monthlyIncrement) || monthlyIncrement < 0) {
+      alert("増加値を正しく入力してください(0以上の数)。");
+      return;
+    }
+    if (increment <= 0 && monthlyIncrement <= 0) {
+      alert("1日あたり・1ヶ月あたりのいずれかの増加値を0より大きい数で入力してください。");
+      return;
+    }
+
+    goal.increment = increment;
+    goal.monthlyIncrement = monthlyIncrement;
+    goal.monthlyIncrementDate = settingsMonthlyIncrementDateInput.value || null;
+    goal.initialValueIncludesToday = settingsInitialIncludesTodayInput.checked;
+    goal.autoIncreaseEnabled = settingsAutoIncreaseInput.checked;
+
+    persist();
+    renderDetailScreen();
+    showScreen("detail");
+  });
 
   // --- manual log tab ---
 
@@ -892,6 +956,7 @@
   const typeHintEl = document.getElementById("typeHint");
   const newGoalIncrementInput = document.getElementById("newGoalIncrement");
   const newGoalMonthlyIncrementInput = document.getElementById("newGoalMonthlyIncrement");
+  const newGoalMonthlyIncrementDateInput = document.getElementById("newGoalMonthlyIncrementDate");
   const newGoalDeadlineInput = document.getElementById("newGoalDeadline");
   let currentAddGoalType = "pace";
 
@@ -964,6 +1029,7 @@
         goalType: "pace",
         increment,
         monthlyIncrement,
+        monthlyIncrementDate: newGoalMonthlyIncrementDateInput.value || null,
         initialValueIncludesToday,
         autoIncreaseEnabled,
       });
@@ -978,6 +1044,7 @@
         goalType: "deadline",
         increment: 0,
         monthlyIncrement: 0,
+        monthlyIncrementDate: null,
         initialValueIncludesToday: false,
         autoIncreaseEnabled: false,
         deadlineDate: deadlineRaw,
