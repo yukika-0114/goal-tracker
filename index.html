@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>目標管理</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="styles.css">
@@ -140,7 +140,7 @@
 
   <form id="addSubgoalForm" class="page-form">
     <label>ラベル(任意) <input type="text" id="newSubgoalLabel" placeholder="例: 折り返し地点"></label>
-    <label>値 <input type="number" id="newSubgoalValue" step="any" required></label>
+    <label>目標値 <input type="number" id="newSubgoalValue" step="any" required></label>
     <label id="newSubgoalDeadlineField" hidden>達成期限日 <input type="date" id="newSubgoalDeadline"></label>
     <button type="submit" class="btn btn-primary btn-block">作成</button>
   </form>

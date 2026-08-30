@@ -273,6 +273,46 @@
     showScreen("list");
   }
 
+  // Swipe right anywhere on a non-list screen returns to the home (list) screen.
+  function attachSwipeBack(screenEl) {
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    screenEl.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length !== 1 || e.target.closest(".tab-row, input, textarea, select")) {
+          tracking = false;
+          return;
+        }
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        tracking = true;
+      },
+      { passive: true }
+    );
+
+    screenEl.addEventListener(
+      "touchend",
+      (e) => {
+        if (!tracking) return;
+        tracking = false;
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        if (dx > 80 && Math.abs(dy) < 60) goToList();
+      },
+      { passive: true }
+    );
+
+    screenEl.addEventListener("touchcancel", () => { tracking = false; }, { passive: true });
+  }
+
+  attachSwipeBack(screens.detail);
+  attachSwipeBack(screens.add);
+  attachSwipeBack(screens.addSubgoal);
+
   // ---------- list screen ----------
 
   const goalListEl = document.getElementById("goalList");
