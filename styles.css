@@ -377,7 +377,9 @@ body {
   margin: 0;
 }
 .inline-form input,
-.page-form input {
+.page-form input,
+.inline-form select,
+.page-form select {
   display: block;
   width: 100%;
   max-width: 100%;
@@ -392,6 +394,29 @@ body {
   color: var(--text);
   background: var(--surface);
 }
+
+.weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 320px;
+  margin-top: -0.25rem;
+}
+.weekday-btn {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border: 1px solid #ddd9d0;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.weekday-btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
 .subgoal-list-spacing { margin-top: 1.5rem; }
 

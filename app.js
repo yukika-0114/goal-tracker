@@ -91,11 +91,26 @@
 
   // ---------- calculation core ----------
 
-  // The monthly increment recurs on the month-anniversary of this date, so picking a
-  // custom date controls which day of the month it lands on; falls back to the goal's
-  // start date when unset.
-  function monthlyAnchorDate(goal) {
-    return isoToDate(goal.monthlyIncrementDate || goal.startDate);
+  function daysInMonth(year, monthIndex0) {
+    return new Date(year, monthIndex0 + 1, 0).getDate();
+  }
+
+  // Amount added by the weekly/monthly recurring schedules on this specific date
+  // (excludes the daily rate, which the caller adds separately). A monthly day past
+  // the end of a short month lands on that month's last day instead of drifting over.
+  function scheduledAutoAmount(goal, date) {
+    let amount = 0;
+    const weeklyDays = goal.weeklyDays || [];
+    if (weeklyDays.includes(date.getDay())) {
+      amount += goal.weeklyIncrement || 0;
+    }
+    if (goal.monthlyDay) {
+      const effectiveDay = Math.min(goal.monthlyDay, daysInMonth(date.getFullYear(), date.getMonth()));
+      if (date.getDate() === effectiveDay) {
+        amount += goal.monthlyIncrement || 0;
+      }
+    }
+    return amount;
   }
 
   function computeAutoSum(goal, uptoDate) {
@@ -107,10 +122,12 @@
     const end = uptoDate;
     let sum = 0;
     while (cur <= end) {
-      if (!excludedSet.has(dateToIso(cur))) sum += goal.increment || 0;
+      if (!excludedSet.has(dateToIso(cur))) {
+        sum += goal.increment || 0;
+        sum += scheduledAutoAmount(goal, cur);
+      }
       cur = addDays(cur, 1);
     }
-    sum += monthsElapsed(monthlyAnchorDate(goal), uptoDate) * (goal.monthlyIncrement || 0);
     return sum;
   }
 
@@ -137,24 +154,17 @@
     return null;
   }
 
-  // Walks forward day by day from `today`, adding the daily rate (skipping excluded
-  // dates) plus the monthly rate on each month-anniversary of the monthly anchor date,
-  // until `remaining` is reached. Handles daily-only, monthly-only, and combined goals alike.
+  // Walks forward day by day from `today`, adding the daily rate plus the weekly/monthly
+  // schedule amounts (skipping excluded dates), until `remaining` is reached.
   function computeCombinedEtaDate(goal, remaining, today) {
     const excludedSet = new Set(goal.excludedDates);
     const dailyRate = goal.increment || 0;
-    const monthlyRate = goal.monthlyIncrement || 0;
-    const anchor = monthlyAnchorDate(goal);
-    let monthIndex = monthsElapsed(anchor, today);
-    let nextAnniversary = addMonths(anchor, monthIndex + 1);
     let cur = addDays(today, 1);
     let acc = 0;
     for (let i = 0; i < 366 * 200; i++) {
-      if (!excludedSet.has(dateToIso(cur))) acc += dailyRate;
-      if (cur.getTime() === nextAnniversary.getTime()) {
-        acc += monthlyRate;
-        monthIndex += 1;
-        nextAnniversary = addMonths(anchor, monthIndex + 1);
+      if (!excludedSet.has(dateToIso(cur))) {
+        acc += dailyRate;
+        acc += scheduledAutoAmount(goal, cur);
       }
       if (acc >= remaining) return cur;
       cur = addDays(cur, 1);
@@ -179,7 +189,9 @@
       return { achieved: false, remaining, etaDate, etaUnavailable: false };
     }
 
-    if (!((goal.increment || 0) > 0) && !((goal.monthlyIncrement || 0) > 0)) {
+    const hasAnyRate =
+      (goal.increment || 0) > 0 || (goal.weeklyIncrement || 0) > 0 || (goal.monthlyIncrement || 0) > 0;
+    if (!hasAnyRate) {
       return { achieved: false, remaining, etaDate: null, etaUnavailable: true };
     }
     const etaDate = computeCombinedEtaDate(goal, remaining, today);
@@ -311,7 +323,6 @@
     detail: document.getElementById("screenDetail"),
     add: document.getElementById("screenAdd"),
     addSubgoal: document.getElementById("screenAddSubgoal"),
-    settings: document.getElementById("screenSettings"),
   };
 
   function showScreen(name) {
@@ -365,7 +376,6 @@
   attachSwipeBack(screens.detail);
   attachSwipeBack(screens.add);
   attachSwipeBack(screens.addSubgoal);
-  attachSwipeBack(screens.settings);
 
   // ---------- list screen ----------
 
@@ -465,6 +475,7 @@
     document.getElementById("addGoalForm").reset();
     setAddGoalType("pace");
     document.getElementById("newGoalAutoIncrease").checked = true;
+    setWeekdaySelection(document.getElementById("newGoalWeekdayPicker"), []);
     showScreen("add");
   });
 
@@ -519,12 +530,13 @@
     fillEl.classList.toggle("achieved", achieved);
 
     const plannedTabBtn = document.querySelector('.tab-btn[data-tab="planned"]');
+    const settingsTabBtn = document.querySelector('.tab-btn[data-tab="settings"]');
     const isDeadlineType = goal.goalType === "deadline";
     plannedTabBtn.hidden = isDeadlineType;
-    if (isDeadlineType && currentDetailTab === "planned") {
+    settingsTabBtn.hidden = isDeadlineType;
+    if (isDeadlineType && (currentDetailTab === "planned" || currentDetailTab === "settings")) {
       currentDetailTab = "manual";
     }
-    document.getElementById("openSettingsScreen").hidden = isDeadlineType;
 
     applyDetailTab();
     renderManualLogPanel(goal, today);
@@ -545,6 +557,10 @@
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       currentDetailTab = btn.dataset.tab;
+      if (currentDetailTab === "settings") {
+        const goal = getCurrentDetailGoal();
+        if (goal) populateSettingsForm(goal);
+      }
       applyDetailTab();
     });
   });
@@ -569,29 +585,64 @@
     renderDetailScreen();
   }
 
-  // ---------- settings screen ----------
+  // ---------- weekday picker / monthly-day select helpers ----------
+
+  function wireWeekdayPicker(container) {
+    container.querySelectorAll(".weekday-btn").forEach((btn) => {
+      btn.addEventListener("click", () => btn.classList.toggle("active"));
+    });
+  }
+
+  function getWeekdaySelection(container) {
+    return Array.from(container.querySelectorAll(".weekday-btn.active")).map((b) => Number(b.dataset.day));
+  }
+
+  function setWeekdaySelection(container, days) {
+    const set = new Set(days || []);
+    container.querySelectorAll(".weekday-btn").forEach((b) => {
+      b.classList.toggle("active", set.has(Number(b.dataset.day)));
+    });
+  }
+
+  function populateMonthlyDaySelect(selectEl) {
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "未設定";
+    selectEl.appendChild(blank);
+    for (let d = 1; d <= 31; d++) {
+      const opt = document.createElement("option");
+      opt.value = String(d);
+      opt.textContent = `${d}日`;
+      selectEl.appendChild(opt);
+    }
+  }
+
+  // ---------- settings tab ----------
 
   const settingsForm = document.getElementById("settingsForm");
-  const settingsIncrementInput = document.getElementById("settingsIncrement");
-  const settingsMonthlyIncrementInput = document.getElementById("settingsMonthlyIncrement");
-  const settingsMonthlyIncrementDateInput = document.getElementById("settingsMonthlyIncrementDate");
+  const settingsCurrentValueInput = document.getElementById("settingsCurrentValue");
   const settingsInitialIncludesTodayInput = document.getElementById("settingsInitialIncludesToday");
+  const settingsIncrementInput = document.getElementById("settingsIncrement");
+  const settingsWeeklyIncrementInput = document.getElementById("settingsWeeklyIncrement");
+  const settingsWeekdayPickerEl = document.getElementById("settingsWeekdayPicker");
+  const settingsMonthlyIncrementInput = document.getElementById("settingsMonthlyIncrement");
+  const settingsMonthlyDaySelect = document.getElementById("settingsMonthlyDay");
   const settingsAutoIncreaseInput = document.getElementById("settingsAutoIncrease");
 
-  document.getElementById("openSettingsScreen").addEventListener("click", () => {
-    const goal = getCurrentDetailGoal();
-    if (!goal) return;
-    settingsIncrementInput.value = goal.increment || "";
-    settingsMonthlyIncrementInput.value = goal.monthlyIncrement || "";
-    settingsMonthlyIncrementDateInput.value = goal.monthlyIncrementDate || "";
-    settingsInitialIncludesTodayInput.checked = !!goal.initialValueIncludesToday;
-    settingsAutoIncreaseInput.checked = goal.autoIncreaseEnabled !== false;
-    showScreen("settings");
-  });
+  populateMonthlyDaySelect(settingsMonthlyDaySelect);
+  wireWeekdayPicker(settingsWeekdayPickerEl);
 
-  document.getElementById("backFromSettings").addEventListener("click", () => {
-    showScreen("detail");
-  });
+  function populateSettingsForm(goal) {
+    const current = computeCurrentValue(goal, todayDate());
+    settingsCurrentValueInput.value = current;
+    settingsInitialIncludesTodayInput.checked = !!goal.initialValueIncludesToday;
+    settingsIncrementInput.value = goal.increment || "";
+    settingsWeeklyIncrementInput.value = goal.weeklyIncrement || "";
+    setWeekdaySelection(settingsWeekdayPickerEl, goal.weeklyDays);
+    settingsMonthlyIncrementInput.value = goal.monthlyIncrement || "";
+    settingsMonthlyDaySelect.value = goal.monthlyDay || "";
+    settingsAutoIncreaseInput.checked = goal.autoIncreaseEnabled !== false;
+  }
 
   settingsForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -599,28 +650,49 @@
     if (!goal) return;
 
     const incrementRaw = settingsIncrementInput.value;
+    const weeklyIncrementRaw = settingsWeeklyIncrementInput.value;
     const monthlyIncrementRaw = settingsMonthlyIncrementInput.value;
     const increment = incrementRaw === "" ? 0 : Number(incrementRaw);
+    const weeklyIncrement = weeklyIncrementRaw === "" ? 0 : Number(weeklyIncrementRaw);
     const monthlyIncrement = monthlyIncrementRaw === "" ? 0 : Number(monthlyIncrementRaw);
+    const desiredCurrentRaw = settingsCurrentValueInput.value;
+    const desiredCurrent = desiredCurrentRaw === "" ? null : Number(desiredCurrentRaw);
 
-    if (Number.isNaN(increment) || increment < 0 || Number.isNaN(monthlyIncrement) || monthlyIncrement < 0) {
+    if (
+      Number.isNaN(increment) || increment < 0 ||
+      Number.isNaN(weeklyIncrement) || weeklyIncrement < 0 ||
+      Number.isNaN(monthlyIncrement) || monthlyIncrement < 0
+    ) {
       alert("増加値を正しく入力してください(0以上の数)。");
       return;
     }
-    if (increment <= 0 && monthlyIncrement <= 0) {
-      alert("1日あたり・1ヶ月あたりのいずれかの増加値を0より大きい数で入力してください。");
+    if (increment <= 0 && weeklyIncrement <= 0 && monthlyIncrement <= 0) {
+      alert("毎日・毎週・毎月のいずれかの増加値を0より大きい数で入力してください。");
+      return;
+    }
+    if (desiredCurrent !== null && (Number.isNaN(desiredCurrent) || desiredCurrent < 0)) {
+      alert("現在の値を正しく入力してください(0以上の数)。");
       return;
     }
 
     goal.increment = increment;
+    goal.weeklyIncrement = weeklyIncrement;
+    goal.weeklyDays = getWeekdaySelection(settingsWeekdayPickerEl);
     goal.monthlyIncrement = monthlyIncrement;
-    goal.monthlyIncrementDate = settingsMonthlyIncrementDateInput.value || null;
+    goal.monthlyDay = settingsMonthlyDaySelect.value ? Number(settingsMonthlyDaySelect.value) : null;
     goal.initialValueIncludesToday = settingsInitialIncludesTodayInput.checked;
     goal.autoIncreaseEnabled = settingsAutoIncreaseInput.checked;
 
+    if (desiredCurrent !== null) {
+      const currentWithNewRates = computeCurrentValue(goal, todayDate());
+      const delta = desiredCurrent - currentWithNewRates;
+      if (delta !== 0) {
+        goal.manualLogs.push({ id: uid(), date: dateToIso(todayDate()), value: delta });
+      }
+    }
+
     persist();
     renderDetailScreen();
-    showScreen("detail");
   });
 
   // --- manual log tab ---
@@ -955,13 +1027,18 @@
   const deadlineFieldsEl = document.getElementById("deadlineFields");
   const typeHintEl = document.getElementById("typeHint");
   const newGoalIncrementInput = document.getElementById("newGoalIncrement");
+  const newGoalWeeklyIncrementInput = document.getElementById("newGoalWeeklyIncrement");
+  const newGoalWeekdayPickerEl = document.getElementById("newGoalWeekdayPicker");
   const newGoalMonthlyIncrementInput = document.getElementById("newGoalMonthlyIncrement");
-  const newGoalMonthlyIncrementDateInput = document.getElementById("newGoalMonthlyIncrementDate");
+  const newGoalMonthlyDaySelect = document.getElementById("newGoalMonthlyDay");
   const newGoalDeadlineInput = document.getElementById("newGoalDeadline");
   let currentAddGoalType = "pace";
 
+  populateMonthlyDaySelect(newGoalMonthlyDaySelect);
+  wireWeekdayPicker(newGoalWeekdayPickerEl);
+
   const TYPE_HINTS = {
-    pace: "1日あたり・1ヶ月あたりの増加値を決めて、達成予定日を自動計算します。",
+    pace: "1日・1週・1ヶ月あたりの増加値を決めて、達成予定日を自動計算します。",
     deadline: "達成期限日を決めて、1日あたりに必要な値を自動計算します。",
   };
 
@@ -1011,25 +1088,33 @@
 
     if (currentAddGoalType === "pace") {
       const incrementRaw = newGoalIncrementInput.value;
+      const weeklyIncrementRaw = newGoalWeeklyIncrementInput.value;
       const monthlyIncrementRaw = newGoalMonthlyIncrementInput.value;
       const increment = incrementRaw === "" ? 0 : Number(incrementRaw);
+      const weeklyIncrement = weeklyIncrementRaw === "" ? 0 : Number(weeklyIncrementRaw);
       const monthlyIncrement = monthlyIncrementRaw === "" ? 0 : Number(monthlyIncrementRaw);
       const initialValueIncludesToday = document.getElementById("newGoalInitialIncludesToday").checked;
       const autoIncreaseEnabled = document.getElementById("newGoalAutoIncrease").checked;
-      if (Number.isNaN(increment) || increment < 0 || Number.isNaN(monthlyIncrement) || monthlyIncrement < 0) {
+      if (
+        Number.isNaN(increment) || increment < 0 ||
+        Number.isNaN(weeklyIncrement) || weeklyIncrement < 0 ||
+        Number.isNaN(monthlyIncrement) || monthlyIncrement < 0
+      ) {
         alert("増加値を正しく入力してください(0以上の数)。");
         return;
       }
-      if (increment <= 0 && monthlyIncrement <= 0) {
-        alert("1日あたり・1ヶ月あたりのいずれかの増加値を0より大きい数で入力してください。");
+      if (increment <= 0 && weeklyIncrement <= 0 && monthlyIncrement <= 0) {
+        alert("毎日・毎週・毎月のいずれかの増加値を0より大きい数で入力してください。");
         return;
       }
       goals.push({
         ...baseGoal,
         goalType: "pace",
         increment,
+        weeklyIncrement,
+        weeklyDays: getWeekdaySelection(newGoalWeekdayPickerEl),
         monthlyIncrement,
-        monthlyIncrementDate: newGoalMonthlyIncrementDateInput.value || null,
+        monthlyDay: newGoalMonthlyDaySelect.value ? Number(newGoalMonthlyDaySelect.value) : null,
         initialValueIncludesToday,
         autoIncreaseEnabled,
       });
@@ -1043,8 +1128,10 @@
         ...baseGoal,
         goalType: "deadline",
         increment: 0,
+        weeklyIncrement: 0,
+        weeklyDays: [],
         monthlyIncrement: 0,
-        monthlyIncrementDate: null,
+        monthlyDay: null,
         initialValueIncludesToday: false,
         autoIncreaseEnabled: false,
         deadlineDate: deadlineRaw,
