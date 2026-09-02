@@ -263,18 +263,20 @@
     relEl.textContent = formatRelativeLabel(today, info.etaDate);
   }
 
-  function fillGoalMainTiles(goal, current, today, remainingEl, etaLabelEl, etaEl, etaRelLabelEl, etaRelEl) {
-    const achieved = current >= goal.target;
+  // Shared by the main-goal and sub-goal tiles: they differ only in which value/deadline
+  // they're measuring progress against.
+  function fillMilestoneTiles(goal, milestoneValue, deadlineIso, current, today, remainingEl, etaLabelEl, etaEl, etaRelLabelEl, etaRelEl) {
+    const achieved = current >= milestoneValue;
 
     if (goal.goalType === "deadline") {
       etaLabelEl.textContent = "達成期限日";
       etaRelLabelEl.textContent = "1日あたり必要な値";
-      remainingEl.textContent = achieved ? "0" : formatNumber(goal.target - current);
-      etaEl.textContent = goal.deadlineDate ? formatAbsoluteDate(isoToDate(goal.deadlineDate)) : "未設定";
+      remainingEl.textContent = achieved ? "0" : formatNumber(milestoneValue - current);
+      etaEl.textContent = deadlineIso ? formatAbsoluteDate(isoToDate(deadlineIso)) : "未設定";
       if (achieved) {
         etaRelEl.textContent = "達成済み";
       } else {
-        const pace = computeRequiredDailyPace(goal, current, today);
+        const pace = computeRequiredDailyPaceFor(goal, current, milestoneValue, deadlineIso, today);
         etaRelEl.textContent = pace > 0 ? `${formatNumber(Math.ceil(pace))} / 日` : "-";
       }
       return achieved;
@@ -283,37 +285,19 @@
     etaLabelEl.textContent = "達成予定日";
     etaRelLabelEl.textContent = "あと";
     const rate = effectiveRate(goal, current, today);
-    const info = computeMilestoneInfo(goal, current, goal.target, today, rate);
+    const info = computeMilestoneInfo(goal, current, milestoneValue, today, rate);
     remainingEl.textContent = info.achieved ? "0" : formatNumber(info.remaining);
     fillEtaCell(info, etaEl, etaRelEl);
     return info.achieved;
   }
 
+  function fillGoalMainTiles(goal, current, today, remainingEl, etaLabelEl, etaEl, etaRelLabelEl, etaRelEl) {
+    return fillMilestoneTiles(goal, goal.target, goal.deadlineDate, current, today, remainingEl, etaLabelEl, etaEl, etaRelLabelEl, etaRelEl);
+  }
+
   function fillSubgoalTiles(goal, sub, current, today, remainingEl, etaLabelEl, etaEl, etaRelLabelEl, etaRelEl) {
-    const achieved = current >= sub.value;
-
-    if (goal.goalType === "deadline") {
-      const deadlineIso = sub.deadlineDate || goal.deadlineDate;
-      etaLabelEl.textContent = "達成期限日";
-      etaRelLabelEl.textContent = "1日あたり必要な値";
-      remainingEl.textContent = achieved ? "0" : formatNumber(sub.value - current);
-      etaEl.textContent = deadlineIso ? formatAbsoluteDate(isoToDate(deadlineIso)) : "未設定";
-      if (achieved) {
-        etaRelEl.textContent = "達成済み";
-      } else {
-        const pace = computeRequiredDailyPaceFor(goal, current, sub.value, deadlineIso, today);
-        etaRelEl.textContent = pace > 0 ? `${formatNumber(Math.ceil(pace))} / 日` : "-";
-      }
-      return achieved;
-    }
-
-    etaLabelEl.textContent = "達成予定日";
-    etaRelLabelEl.textContent = "あと";
-    const rate = effectiveRate(goal, current, today);
-    const info = computeMilestoneInfo(goal, current, sub.value, today, rate);
-    remainingEl.textContent = info.achieved ? "0" : formatNumber(info.remaining);
-    fillEtaCell(info, etaEl, etaRelEl);
-    return info.achieved;
+    const deadlineIso = sub.deadlineDate || goal.deadlineDate;
+    return fillMilestoneTiles(goal, sub.value, deadlineIso, current, today, remainingEl, etaLabelEl, etaEl, etaRelLabelEl, etaRelEl);
   }
 
   // ---------- screen switching ----------
@@ -495,6 +479,19 @@
     showScreen("detail");
   }
 
+  const detailGoalNameEl = document.getElementById("detailGoalName");
+  const detailCurrentEl = document.getElementById("detailCurrent");
+  const detailTargetEl = document.getElementById("detailTarget");
+  const detailProgressFillEl = document.getElementById("detailProgressFill");
+  const detailRemainingEl = document.getElementById("detailRemaining");
+  const detailEtaLabelEl = document.getElementById("detailEtaLabel");
+  const detailEtaEl = document.getElementById("detailEta");
+  const detailEtaRelativeLabelEl = document.getElementById("detailEtaRelativeLabel");
+  const detailEtaRelativeEl = document.getElementById("detailEtaRelative");
+  const detailStatusEl = document.getElementById("detailStatus");
+  const plannedTabBtnEl = document.querySelector('.tab-btn[data-tab="planned"]');
+  const settingsTabBtnEl = document.querySelector('.tab-btn[data-tab="settings"]');
+
   function renderDetailScreen() {
     const goal = getCurrentDetailGoal();
     if (!goal) {
@@ -504,36 +501,31 @@
     const today = todayDate();
     const current = computeCurrentValue(goal, today);
 
-    document.getElementById("detailGoalName").textContent = goal.name;
-
-    document.getElementById("detailCurrent").textContent = formatNumber(current);
-    document.getElementById("detailTarget").textContent = formatNumber(goal.target);
+    detailGoalNameEl.textContent = goal.name;
+    detailCurrentEl.textContent = formatNumber(current);
+    detailTargetEl.textContent = formatNumber(goal.target);
 
     const pct = Math.min(100, (current / goal.target) * 100);
-    const fillEl = document.getElementById("detailProgressFill");
-    fillEl.style.width = `${pct}%`;
+    detailProgressFillEl.style.width = `${pct}%`;
 
     const achieved = fillGoalMainTiles(
       goal,
       current,
       today,
-      document.getElementById("detailRemaining"),
-      document.getElementById("detailEtaLabel"),
-      document.getElementById("detailEta"),
-      document.getElementById("detailEtaRelativeLabel"),
-      document.getElementById("detailEtaRelative")
+      detailRemainingEl,
+      detailEtaLabelEl,
+      detailEtaEl,
+      detailEtaRelativeLabelEl,
+      detailEtaRelativeEl
     );
 
-    const statusEl = document.getElementById("detailStatus");
-    statusEl.textContent = achieved ? "達成" : "進行中";
-    statusEl.classList.toggle("achieved", achieved);
-    fillEl.classList.toggle("achieved", achieved);
+    detailStatusEl.textContent = achieved ? "達成" : "進行中";
+    detailStatusEl.classList.toggle("achieved", achieved);
+    detailProgressFillEl.classList.toggle("achieved", achieved);
 
-    const plannedTabBtn = document.querySelector('.tab-btn[data-tab="planned"]');
-    const settingsTabBtn = document.querySelector('.tab-btn[data-tab="settings"]');
     const isDeadlineType = goal.goalType === "deadline";
-    plannedTabBtn.hidden = isDeadlineType;
-    settingsTabBtn.hidden = isDeadlineType;
+    plannedTabBtnEl.hidden = isDeadlineType;
+    settingsTabBtnEl.hidden = isDeadlineType;
     if (isDeadlineType && (currentDetailTab === "planned" || currentDetailTab === "settings")) {
       currentDetailTab = "manual";
     }
@@ -617,6 +609,27 @@
     }
   }
 
+  // Parses and validates the daily/weekly/monthly rate inputs shared by the add-goal
+  // and settings forms. Returns { increment, weeklyIncrement, monthlyIncrement } or
+  // { error } with a message ready to alert().
+  function parseRateInputs(incrementInput, weeklyIncrementInput, monthlyIncrementInput) {
+    const increment = incrementInput.value === "" ? 0 : Number(incrementInput.value);
+    const weeklyIncrement = weeklyIncrementInput.value === "" ? 0 : Number(weeklyIncrementInput.value);
+    const monthlyIncrement = monthlyIncrementInput.value === "" ? 0 : Number(monthlyIncrementInput.value);
+
+    if (
+      Number.isNaN(increment) || increment < 0 ||
+      Number.isNaN(weeklyIncrement) || weeklyIncrement < 0 ||
+      Number.isNaN(monthlyIncrement) || monthlyIncrement < 0
+    ) {
+      return { error: "増加値を正しく入力してください(0以上の数)。" };
+    }
+    if (increment <= 0 && weeklyIncrement <= 0 && monthlyIncrement <= 0) {
+      return { error: "毎日・毎週・毎月のいずれかの増加値を0より大きい数で入力してください。" };
+    }
+    return { increment, weeklyIncrement, monthlyIncrement };
+  }
+
   // ---------- settings tab ----------
 
   const settingsForm = document.getElementById("settingsForm");
@@ -649,27 +662,15 @@
     const goal = getCurrentDetailGoal();
     if (!goal) return;
 
-    const incrementRaw = settingsIncrementInput.value;
-    const weeklyIncrementRaw = settingsWeeklyIncrementInput.value;
-    const monthlyIncrementRaw = settingsMonthlyIncrementInput.value;
-    const increment = incrementRaw === "" ? 0 : Number(incrementRaw);
-    const weeklyIncrement = weeklyIncrementRaw === "" ? 0 : Number(weeklyIncrementRaw);
-    const monthlyIncrement = monthlyIncrementRaw === "" ? 0 : Number(monthlyIncrementRaw);
+    const parsed = parseRateInputs(settingsIncrementInput, settingsWeeklyIncrementInput, settingsMonthlyIncrementInput);
+    if (parsed.error) {
+      alert(parsed.error);
+      return;
+    }
+    const { increment, weeklyIncrement, monthlyIncrement } = parsed;
+
     const desiredCurrentRaw = settingsCurrentValueInput.value;
     const desiredCurrent = desiredCurrentRaw === "" ? null : Number(desiredCurrentRaw);
-
-    if (
-      Number.isNaN(increment) || increment < 0 ||
-      Number.isNaN(weeklyIncrement) || weeklyIncrement < 0 ||
-      Number.isNaN(monthlyIncrement) || monthlyIncrement < 0
-    ) {
-      alert("増加値を正しく入力してください(0以上の数)。");
-      return;
-    }
-    if (increment <= 0 && weeklyIncrement <= 0 && monthlyIncrement <= 0) {
-      alert("毎日・毎週・毎月のいずれかの増加値を0より大きい数で入力してください。");
-      return;
-    }
     if (desiredCurrent !== null && (Number.isNaN(desiredCurrent) || desiredCurrent < 0)) {
       alert("現在の値を正しく入力してください(0以上の数)。");
       return;
@@ -1087,26 +1088,14 @@
     };
 
     if (currentAddGoalType === "pace") {
-      const incrementRaw = newGoalIncrementInput.value;
-      const weeklyIncrementRaw = newGoalWeeklyIncrementInput.value;
-      const monthlyIncrementRaw = newGoalMonthlyIncrementInput.value;
-      const increment = incrementRaw === "" ? 0 : Number(incrementRaw);
-      const weeklyIncrement = weeklyIncrementRaw === "" ? 0 : Number(weeklyIncrementRaw);
-      const monthlyIncrement = monthlyIncrementRaw === "" ? 0 : Number(monthlyIncrementRaw);
+      const parsed = parseRateInputs(newGoalIncrementInput, newGoalWeeklyIncrementInput, newGoalMonthlyIncrementInput);
+      if (parsed.error) {
+        alert(parsed.error);
+        return;
+      }
+      const { increment, weeklyIncrement, monthlyIncrement } = parsed;
       const initialValueIncludesToday = document.getElementById("newGoalInitialIncludesToday").checked;
       const autoIncreaseEnabled = document.getElementById("newGoalAutoIncrease").checked;
-      if (
-        Number.isNaN(increment) || increment < 0 ||
-        Number.isNaN(weeklyIncrement) || weeklyIncrement < 0 ||
-        Number.isNaN(monthlyIncrement) || monthlyIncrement < 0
-      ) {
-        alert("増加値を正しく入力してください(0以上の数)。");
-        return;
-      }
-      if (increment <= 0 && weeklyIncrement <= 0 && monthlyIncrement <= 0) {
-        alert("毎日・毎週・毎月のいずれかの増加値を0より大きい数で入力してください。");
-        return;
-      }
       goals.push({
         ...baseGoal,
         goalType: "pace",

@@ -1,9 +1,9 @@
-const CACHE_NAME = "goal-tracker-v8";
+const CACHE_NAME = "goal-tracker-v9";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css?v=8",
-  "./app.js?v=8",
+  "./app.js?v=9",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
